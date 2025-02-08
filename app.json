@@ -1,4 +1,6 @@
 {
   "name": "PushToTalk",
-  "displayName": "PushToTalk"
+  "displayName": "PushToTalk",
+  "platforms": ["ios", "android", "web"]
+
 }

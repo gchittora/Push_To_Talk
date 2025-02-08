@@ -1,118 +1,133 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated } from 'react-native';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+const WEBSOCKET_URL = 'ws://172.22.28.123:8081'; // Change based on your network
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+const App = () => {
+  const ws = useRef<WebSocket | null>(null);
+  const [isTalking, setIsTalking] = useState(false);
+  const [activeUsers, setActiveUsers] = useState<string[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+  // Function to connect to WebSocket
+  const connectWebSocket = useCallback(() => {
+    if (!ws.current || ws.current.readyState === WebSocket.CLOSED) {
+      ws.current = new WebSocket(WEBSOCKET_URL);
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+      ws.current.onopen = () => addLog('✅ Connected to WebSocket');
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+      ws.current.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'start_talking') {
+          setActiveUsers((prev) => [...new Set([...prev, data.user])]);
+          addLog(`🎙️ ${data.user} started talking`);
+        } else if (data.type === 'stop_talking') {
+          setActiveUsers((prev) => prev.filter(user => user !== data.user));
+          addLog(`🔇 ${data.user} stopped talking`);
+        } else if (data.type === 'connect') {
+          addLog(`🔵 ${data.user} connected`);
+        } else if (data.type === 'disconnect') {
+          setActiveUsers((prev) => prev.filter(user => user !== data.user));
+          addLog(`❌ ${data.user} disconnected`);
+        }
+      };
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+      ws.current.onerror = () => addLog('⚠️ WebSocket error occurred');
+      ws.current.onclose = () => {
+        // Keep the last 20% of logs on disconnection
+        setLogs((prevLogs) => prevLogs.slice(-Math.max(1, Math.floor(prevLogs.length * 0.2))));
+        addLog('❌ WebSocket disconnected, attempting to reconnect...');
+        setTimeout(connectWebSocket, 3000);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
+    connectWebSocket();
+    return () => ws.current?.close();
+  }, [connectWebSocket]);
+
+  // Function to add logs
+  const addLog = (message: string) => {
+    setLogs((prevLogs) => [...prevLogs, `${new Date().toLocaleTimeString()}: ${message}`]);
   };
 
+  // Handle button press (start talking)
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, { toValue: 1.2, useNativeDriver: true }).start();
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: 'start_talking', user: 'User1' }));
+      setIsTalking(true);
+    }
+  };
+
+  // Handle button release (stop talking)
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: 'stop_talking', user: 'User1' }));
+      setIsTalking(false);
+    }
+  };
+
+  // Clear logs manually (does not auto-clear on stop talking)
+  const clearLogs = () => setLogs([]);
+
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
+    <View style={styles.container}>
+      <Text style={styles.heading}>Push-to-Talk</Text>
+      <Text style={styles.subHeading}>Active Users: {activeUsers.length}</Text>
+
+      <View style={styles.card}>
+        <Animated.View style={[styles.buttonWrapper, { transform: [{ scale: scaleAnim }] }]}>
+          <TouchableOpacity
+            style={[styles.button, isTalking ? styles.activeButton : null]}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+          >
+            <Text style={styles.buttonText}>{isTalking ? '🎙️ Talking...' : '🎤 Hold to Talk'}</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+
+      <View style={styles.usersCard}>
+        <Text style={styles.subHeading}>Currently Talking:</Text>
+        <Text style={styles.userList}>{activeUsers.length ? activeUsers.join(', ') : 'None'}</Text>
+      </View>
+
+      <ScrollView style={styles.logContainer}>
+        {logs.map((log, index) => (
+          <Text key={index} style={styles.logText}>{log}</Text>
+        ))}
       </ScrollView>
-    </SafeAreaView>
+      
+      <TouchableOpacity style={styles.clearButton} onPress={clearLogs}>
+        <Text style={styles.clearButtonText}>Clear Logs</Text>
+      </TouchableOpacity>
+      
+      <Text style={styles.footer}>Developer: Garvit Chittora</Text>
+      <Text style={styles.footer}>Built as: Order G's Assignment</Text>
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#121212', padding: 20 },
+  heading: { fontSize: 28, fontWeight: 'bold', color: '#fff', marginBottom: 10 },
+  subHeading: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 10 },
+  card: { backgroundColor: '#1E1E1E', padding: 30, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10 },
+  buttonWrapper: { alignItems: 'center' },
+  button: { padding: 20, backgroundColor: '#007bff', borderRadius: 50 },
+  activeButton: { backgroundColor: '#28a745' },
+  buttonText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
+  usersCard: { marginTop: 20, padding: 15, backgroundColor: '#1E1E1E', borderRadius: 15, width: '100%', alignItems: 'center' },
+  userList: { fontSize: 16, color: '#bbb' },
+  logContainer: { marginTop: 20, width: '100%', height: 150, backgroundColor: '#1E1E1E', padding: 10, borderRadius: 10 },
+  logText: { fontSize: 14, color: '#ccc' },
+  clearButton: { marginTop: 10, padding: 10, backgroundColor: '#ff4444', borderRadius: 10 },
+  clearButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  footer: { marginTop: 10, color: '#bbb', fontSize: 14 },
 });
 
 export default App;
