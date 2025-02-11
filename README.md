@@ -44,7 +44,7 @@ Using a physical Android phone is preferred over a browser or emulator. To run t
    ```
    - Connect your Android device via USB and enable USB debugging.
    - Ensure Android SDK is installed and properly set up.
-
+Since, you will be running it on local server make sure you are on the same network
 ### 4. Running in an Emulator (Optional)
 If using an emulator, ensure Android Studio and an emulator instance are properly configured.
    ```sh
