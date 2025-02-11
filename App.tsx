@@ -1,10 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated } from 'react-native';
 
+// WebSocket server URL
 const WEBSOCKET_URL = 'ws://172.22.28.123:8081'; // Change based on your network
+
+// Generate a unique user ID (Can be improved using AsyncStorage or react-native-device-info)
+const generateUserId = () => `User_${Math.floor(Math.random() * 10000)}`;
 
 const App = () => {
   const ws = useRef<WebSocket | null>(null);
+  const [userId] = useState(generateUserId()); // Generate a unique user ID
   const [isTalking, setIsTalking] = useState(false);
   const [activeUsers, setActiveUsers] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
@@ -15,7 +20,10 @@ const App = () => {
     if (!ws.current || ws.current.readyState === WebSocket.CLOSED) {
       ws.current = new WebSocket(WEBSOCKET_URL);
 
-      ws.current.onopen = () => addLog('✅ Connected to WebSocket');
+      ws.current.onopen = () => {
+        addLog(`✅ Connected as ${userId}`);
+        ws.current?.send(JSON.stringify({ type: 'connect', user: userId })); // Send connection message
+      };
 
       ws.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -35,13 +43,11 @@ const App = () => {
 
       ws.current.onerror = () => addLog('⚠️ WebSocket error occurred');
       ws.current.onclose = () => {
-        // Keep the last 20% of logs on disconnection
-        setLogs((prevLogs) => prevLogs.slice(-Math.max(1, Math.floor(prevLogs.length * 0.2))));
         addLog('❌ WebSocket disconnected, attempting to reconnect...');
         setTimeout(connectWebSocket, 3000);
       };
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     connectWebSocket();
@@ -57,7 +63,7 @@ const App = () => {
   const handlePressIn = () => {
     Animated.spring(scaleAnim, { toValue: 1.2, useNativeDriver: true }).start();
     if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ type: 'start_talking', user: 'User1' }));
+      ws.current.send(JSON.stringify({ type: 'start_talking', user: userId }));
       setIsTalking(true);
     }
   };
@@ -66,17 +72,18 @@ const App = () => {
   const handlePressOut = () => {
     Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start();
     if (ws.current?.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({ type: 'stop_talking', user: 'User1' }));
+      ws.current.send(JSON.stringify({ type: 'stop_talking', user: userId }));
       setIsTalking(false);
     }
   };
 
-  // Clear logs manually (does not auto-clear on stop talking)
+  // Clear logs manually
   const clearLogs = () => setLogs([]);
 
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Push-to-Talk</Text>
+      <Text style={styles.subHeading}>User ID: {userId}</Text>
       <Text style={styles.subHeading}>Active Users: {activeUsers.length}</Text>
 
       <View style={styles.card}>
